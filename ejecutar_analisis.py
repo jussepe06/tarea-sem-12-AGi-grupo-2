@@ -1,168 +1,145 @@
 import pandas as pd
-import numpy as np
 from mlxtend.preprocessing import TransactionEncoder
 from mlxtend.frequent_patterns import apriori, association_rules
 
-def main():
-    print("="*70)
-    print("   CASO RIPLEY: MARKET BASKET ANALYSIS CON APRIORI (PYTHON)")
-    print("="*70)
+# ==========================================
+# Actividad 1: Preparacion de los datos
+# ==========================================
+df = pd.read_excel("Dataset_Ripley_ReglasAsociacion.xlsx", sheet_name="Transacciones")
+catalogo = pd.read_excel("Dataset_Ripley_ReglasAsociacion.xlsx", sheet_name="Catálogo")
 
-    # 1. Cargar datos
-    excel_path = 'Dataset_Ripley_ReglasAsociacion.xlsx'
-    df_trans = pd.read_excel(excel_path, sheet_name='Transacciones')
-    df_cat = pd.read_excel(excel_path, sheet_name='Catálogo')
-    
-    # 2. Métricas de Canasta (Actividad 1)
-    n_tickets = df_trans['TicketID'].nunique()
-    n_productos = df_trans['Producto'].nunique()
-    n_lineas = len(df_trans)
-    
-    canastas_serie = df_trans.groupby('TicketID')['Producto'].count()
-    tam_prom = canastas_serie.mean()
-    tam_min = canastas_serie.min()
-    tam_max = canastas_serie.max()
-    tam_std = canastas_serie.std()
-    
-    gasto_ticket = df_trans.groupby('TicketID')['Precio (S/)'].sum()
-    venta_total = gasto_ticket.sum()
-    ticket_prom_soles = gasto_ticket.mean()
+# Agrupamos los productos comprados en cada ticket
+canastas = df.groupby("TicketID")["Producto"].apply(list).tolist()
 
-    print(f"\n[ACTIVIDAD 1] KPIs DE LA CANASTA:")
-    print(f"  - Total de boletas/tickets analizados: {n_tickets:,}")
-    print(f"  - Total de líneas transaccionales: {n_lineas:,}")
-    print(f"  - Variedad de productos con venta: {n_productos} productos")
-    print(f"  - Tamaño promedio de canasta: {tam_prom:.2f} ítems/ticket (mín: {tam_min}, máx: {tam_max}, desv: {tam_std:.2f})")
-    print(f"  - Venta total acumulada: S/ {venta_total:,.2f}")
-    print(f"  - Gasto promedio por ticket: S/ {ticket_prom_soles:,.2f}")
+# Pasamos a formato one-hot (1/True si el producto esta en el ticket, 0/False si no)
+te = TransactionEncoder()
+matriz = pd.DataFrame(te.fit(canastas).transform(canastas), columns=te.columns_)
 
-    # 3. Transformación a formato canasta (One-Hot Encoding)
-    canastas = df_trans.groupby('TicketID')['Producto'].apply(list).tolist()
-    te = TransactionEncoder()
-    matriz_binaria = te.fit(canastas).transform(canastas)
-    df_onehot = pd.DataFrame(matriz_binaria, columns=te.columns_)
+# Calculo de KPIs basicos de la canasta
+num_tickets = df["TicketID"].nunique()
+num_productos = df["Producto"].nunique()
+tam_canasta = df.groupby("TicketID")["Producto"].count()
+tam_promedio = tam_canasta.mean()
+venta_total = df["Precio (S/)"].sum()
+ticket_promedio = df.groupby("TicketID")["Precio (S/)"].sum().mean()
 
-    # 4. Itemsets Frecuentes y Top 10 Soporte (Actividad 2)
-    soporte_individual = df_onehot.mean().sort_values(ascending=False)
-    top10_ind = pd.DataFrame({
-        'Producto': soporte_individual.head(10).index,
-        'Soporte': soporte_individual.head(10).values,
-        'Tickets': (soporte_individual.head(10).values * n_tickets).astype(int),
-        'Porcentaje': (soporte_individual.head(10).values * 100).round(2)
-    }).merge(df_cat[['Producto', 'Categoría', 'Precio referencial (S/)']], on='Producto', how='left')
+print("--- ACTIVIDAD 1: KPIS DE LA CANASTA ---")
+print(f"Numero total de tickets: {num_tickets}")
+print(f"Total de lineas de venta: {len(df)}")
+print(f"Productos distintos vendidos: {num_productos}")
+print(f"Tamano promedio de la canasta: {tam_promedio:.3f} productos por ticket")
+print(f"Venta total: S/ {venta_total:,.2f} | Ticket promedio: S/ {ticket_promedio:,.2f}\n")
 
-    print(f"\n[ACTIVIDAD 2] TOP 10 PRODUCTOS CON MAYOR SOPORTE:")
-    for idx, row in top10_ind.iterrows():
-        print(f"  {idx+1}. {row['Producto']} ({row['Categoría']}): Soporte = {row['Soporte']:.3f} ({row['Porcentaje']}%) | {row['Tickets']} tickets | S/ {row['Precio referencial (S/)']}")
+# ==========================================
+# Actividad 2: Itemsets frecuentes y soporte
+# ==========================================
+# Top 10 productos individuales con mayor soporte
+soporte_productos = matriz.mean().sort_values(ascending=False).head(10)
+top10_productos = pd.DataFrame({
+    "Producto": soporte_productos.index,
+    "Soporte": soporte_productos.values,
+    "Soporte (%)": (soporte_productos.values * 100).round(1),
+    "Tickets": (soporte_productos.values * num_tickets).astype(int)
+})
 
-    # Itemsets frecuentes con umbral justificado min_support = 0.03 (30 tickets)
-    frecuentes = apriori(df_onehot, min_support=0.03, use_colnames=True)
-    frecuentes['tamaño'] = frecuentes['itemsets'].apply(lambda x: len(x))
+print("--- ACTIVIDAD 2: TOP 10 PRODUCTOS CON MAYOR SOPORTE ---")
+print(top10_productos.to_string(index=False))
 
-    print(f"\n  Itemsets Frecuentes con Soporte >= 3.0% (mínimo 30 clientes): {len(frecuentes)} conjuntos")
-    print(f"    - Conjuntos de 1 producto (1-itemsets): {len(frecuentes[frecuentes['tamaño'] == 1])}")
-    print(f"    - Conjuntos de 2 productos (2-itemsets): {len(frecuentes[frecuentes['tamaño'] == 2])}")
-    print(f"    - Conjuntos de 3 productos (3-itemsets): {len(frecuentes[frecuentes['tamaño'] == 3])}")
+# Aplicamos Apriori con soporte minimo de 3% (minimo 30 tickets de 1000)
+frecuentes = apriori(matriz, min_support=0.03, use_colnames=True)
+frecuentes["cantidad_items"] = frecuentes["itemsets"].apply(len)
 
-    # 5. Generación de Reglas de Asociación (Actividad 3)
-    reglas = association_rules(frecuentes, metric='confidence', min_threshold=0.25)
-    reglas = reglas[reglas['lift'] > 1.0].sort_values(by=['lift', 'support'], ascending=[False, False])
+print(f"\nTotal de itemsets frecuentes (soporte >= 3%): {len(frecuentes)}")
+print(f" - De 1 producto: {len(frecuentes[frecuentes['cantidad_items'] == 1])}")
+print(f" - De 2 productos: {len(frecuentes[frecuentes['cantidad_items'] == 2])}")
+print(f" - De 3 productos: {len(frecuentes[frecuentes['cantidad_items'] == 3])}\n")
 
-    # Convertir frozensets a strings legibles
-    reglas['antecedente_str'] = reglas['antecedents'].apply(lambda x: ', '.join(list(x)))
-    reglas['consecuente_str'] = reglas['consequents'].apply(lambda x: ', '.join(list(x)))
+# ==========================================
+# Actividad 3: Generacion de reglas
+# ==========================================
+# Generamos las reglas con confianza minima de 30% y filtramos lift > 1
+reglas = association_rules(frecuentes, metric="confidence", min_threshold=0.30)
+reglas = reglas[reglas["lift"] > 1.0].copy()
 
-    print(f"\n[ACTIVIDAD 3] REGLAS GENERADAS (Confianza >= 25%, Lift > 1.0): {len(reglas)} reglas")
-    print(f"\n  TOP 10 MEJORES REGLAS ORDENADAS POR LIFT:")
-    top10_reglas = reglas.head(10).copy()
-    for idx, r in top10_reglas.reset_index().iterrows():
-        print(f"  R{idx+1}: [{r['antecedente_str']}]  -->  [{r['consecuente_str']}]")
-        print(f"      Soporte: {r['support']:.3f} ({r['support']*100:.1f}%) | Confianza: {r['confidence']:.3f} ({r['confidence']*100:.1f}%) | Lift: {r['lift']:.3f}")
+# Formateamos antecedentes y consecuentes para que se lean mejor sin el frozenset
+reglas["Antecedente"] = reglas["antecedents"].apply(lambda x: ", ".join(list(x)))
+reglas["Consecuente"] = reglas["consequents"].apply(lambda x: ", ".join(list(x)))
 
-    # 6. Selección de las 5 Reglas más valiosas de negocio (Actividad 4)
-    # Seleccionamos reglas con sentido comercial transversal: Electrohogar, Moda Mujer, Tecnología, Accesorios y Deportes
-    reglas_seleccionadas = [
-        # Regla 1: Olla arrocera -> Licuadora (Electrohogar)
-        reglas[(reglas['antecedente_str'] == 'Olla arrocera') & (reglas['consecuente_str'] == 'Licuadora')].iloc[0],
-        # Regla 2: Cartera -> Vestido (Moda Mujer)
-        reglas[(reglas['antecedente_str'] == 'Cartera') & (reglas['consecuente_str'] == 'Vestido')].iloc[0],
-        # Regla 3: Smartwatch -> Smartphone (Tecnología)
-        reglas[(reglas['antecedente_str'] == 'Smartwatch') & (reglas['consecuente_str'] == 'Smartphone')].iloc[0],
-        # Regla 4: Funda para celular + Audífonos Bluetooth -> Smartphone
-        reglas[(reglas['antecedente_str'].isin(['Audífonos Bluetooth, Funda para celular', 'Funda para celular, Audífonos Bluetooth'])) & (reglas['consecuente_str'] == 'Smartphone')].iloc[0],
-        # Regla 5: Teclado + Mouse -> Mochila
-        reglas[(reglas['antecedente_str'].isin(['Mouse inalámbrico, Teclado inalámbrico', 'Teclado inalámbrico, Mouse inalámbrico'])) & (reglas['consecuente_str'] == 'Mochila')].iloc[0]
-    ]
+# Ordenamos por lift de mayor a menor
+reglas = reglas.sort_values(["lift", "support"], ascending=[False, False])
 
-    print(f"\n[ACTIVIDAD 4] 5 REGLAS MÁS VALIOSAS PARA ESTRATEGIA COMERCIAL:")
-    for i, r in enumerate(reglas_seleccionadas, 1):
-        print(f"  Regla Estratégica {i}: [{r['antecedente_str']}]  ==>  [{r['consecuente_str']}]")
-        print(f"      Soporte: {r['support']*100:.2f}% | Confianza: {r['confidence']*100:.2f}% | Lift: {r['lift']:.2f}")
+print(f"--- ACTIVIDAD 3: TOP 10 REGLAS ORDENADAS POR LIFT (de {len(reglas)} reglas) ---")
+tabla_top10 = reglas[["Antecedente", "Consecuente", "support", "confidence", "lift"]].head(10).copy()
+tabla_top10["support"] = tabla_top10["support"].round(3)
+tabla_top10["confidence"] = tabla_top10["confidence"].round(3)
+tabla_top10["lift"] = tabla_top10["lift"].round(3)
+print(tabla_top10.to_string(index=False))
 
-    # 7. Análisis por Tienda (Actividad 5)
-    tiendas_res = []
-    for t in df_trans['Tienda'].unique():
-        df_sub = df_trans[df_trans['Tienda'] == t]
-        t_tickets = df_sub['TicketID'].nunique()
-        t_lineas = len(df_sub)
-        t_venta = df_sub['Precio (S/)'].sum()
-        t_prom_ticket = t_venta / t_tickets
-        t_prom_items = t_lineas / t_tickets
-        
-        # Categoría más vendida
-        cat_top = df_sub.groupby('Categoría')['Producto'].count().sort_values(ascending=False).index[0]
-        
-        tiendas_res.append({
-            'Tienda': t,
-            'Tickets': t_tickets,
-            'Líneas': t_lineas,
-            'Venta Total (S/)': t_venta,
-            'Ticket Promedio (S/)': t_prom_ticket,
-            'Canasta Promedio': t_prom_items,
-            'Categoría Principal': cat_top
+# ==========================================
+# Actividad 4: Las 5 mejores reglas para el negocio
+# ==========================================
+# Filtramos 5 reglas representativas de distintas categorias con buen soporte y lift
+print("\n--- ACTIVIDAD 4: 5 REGLAS SELECCIONADAS PARA ESTRATEGIA ---")
+filtro_5 = [
+    ("Olla arrocera", "Licuadora"),
+    ("Cartera", "Vestido"),
+    ("Smartwatch", "Smartphone"),
+    ("Audífonos Bluetooth, Funda para celular", "Smartphone"),
+    ("Mouse inalámbrico, Teclado inalámbrico", "Mochila")
+]
+
+reglas_5_lista = []
+for ant_buscado, con_buscado in filtro_5:
+    # Buscamos coincidencia sin importar el orden interno de los items
+    set_ant = set(ant_buscado.split(", "))
+    set_con = set(con_buscado.split(", "))
+    match = reglas[(reglas["antecedents"] == frozenset(set_ant)) & (reglas["consequents"] == frozenset(set_con))]
+    if not match.empty:
+        r = match.iloc[0]
+        reglas_5_lista.append({
+            "Antecedente": r["Antecedente"],
+            "Consecuente": r["Consecuente"],
+            "Soporte": round(r["support"], 3),
+            "Confianza": round(r["confidence"], 3),
+            "Lift": round(r["lift"], 3)
         })
-    df_tiendas = pd.DataFrame(tiendas_res).sort_values(by='Tickets', ascending=False)
-    print(f"\n[ACTIVIDAD 5] COMPARATIVA POR TIENDA:")
-    print(df_tiendas.to_string(index=False))
 
-    # Guardar resultados en Excel para entrega adjunta
-    output_excel = 'Resultados_Ripley_Apriori_Grupo2.xlsx'
-    with pd.ExcelWriter(output_excel, engine='openpyxl') as writer:
-        pd.DataFrame([{
-            'Indicador': 'Tickets analizados', 'Valor': n_tickets
-        }, {
-            'Indicador': 'Líneas de venta', 'Valor': n_lineas
-        }, {
-            'Indicador': 'Productos distintos', 'Valor': n_productos
-        }, {
-            'Indicador': 'Tamaño medio canasta', 'Valor': round(tam_prom, 2)
-        }, {
-            'Indicador': 'Venta total acumulada (S/)', 'Valor': round(venta_total, 2)
-        }, {
-            'Indicador': 'Ticket promedio (S/)', 'Valor': round(ticket_prom_soles, 2)
-        }]).to_excel(writer, sheet_name='KPIs_Canasta', index=False)
-        
-        top10_ind.to_excel(writer, sheet_name='Top10_Productos_Soporte', index=False)
-        top10_reglas[['antecedente_str', 'consecuente_str', 'support', 'confidence', 'lift']].rename(columns={
-            'antecedente_str': 'Antecedente (A)',
-            'consecuente_str': 'Consecuente (B)',
-            'support': 'Soporte',
-            'confidence': 'Confianza',
-            'lift': 'Lift'
-        }).to_excel(writer, sheet_name='Top10_Reglas_Lift', index=False)
-        
-        pd.DataFrame([{
-            'Regla': f"[{r['antecedente_str']}] => [{r['consecuente_str']}]",
-            'Soporte (%)': round(r['support']*100, 2),
-            'Confianza (%)': round(r['confidence']*100, 2),
-            'Lift': round(r['lift'], 2)
-        } for r in reglas_seleccionadas]).to_excel(writer, sheet_name='5_Reglas_Estrategicas', index=False)
+df_5_reglas = pd.DataFrame(reglas_5_lista)
+print(df_5_reglas.to_string(index=False))
 
-        df_tiendas.to_excel(writer, sheet_name='Analisis_Tiendas', index=False)
+# ==========================================
+# Actividad 5: Analisis por tienda y categoria
+# ==========================================
+print("\n--- ACTIVIDAD 5: RESUMEN POR TIENDA ---")
+resumen_tiendas = df.groupby("Tienda").agg(
+    Tickets=("TicketID", "nunique"),
+    Items_Vendidos=("Producto", "count"),
+    Venta_Total=("Precio (S/)", "sum")
+).reset_index()
+resumen_tiendas["Tamano_Canasta_Prom"] = (resumen_tiendas["Items_Vendidos"] / resumen_tiendas["Tickets"]).round(2)
+resumen_tiendas["Ticket_Promedio_Soles"] = (resumen_tiendas["Venta_Total"] / resumen_tiendas["Tickets"]).round(2)
+resumen_tiendas = resumen_tiendas.sort_values("Tickets", ascending=False)
+print(resumen_tiendas.to_string(index=False))
 
-    print(f"\n-> Archivo Excel con resultados exportado con éxito: {output_excel}")
-    print("="*70)
+# Ejemplo de reglas filtrando solo una categoria: Tecnologia
+df_tec = df[df["Categoría"] == "Tecnología"]
+canastas_tec = df_tec.groupby("TicketID")["Producto"].apply(list).tolist()
+te_tec = TransactionEncoder()
+matriz_tec = pd.DataFrame(te_tec.fit(canastas_tec).transform(canastas_tec), columns=te_tec.columns_)
+frec_tec = apriori(matriz_tec, min_support=0.05, use_colnames=True)
+reglas_tec = association_rules(frec_tec, metric="confidence", min_threshold=0.40)
+reglas_tec = reglas_tec[reglas_tec["lift"] > 1.0].sort_values("lift", ascending=False)
+reglas_tec["Antecedente"] = reglas_tec["antecedents"].apply(lambda x: ", ".join(list(x)))
+reglas_tec["Consecuente"] = reglas_tec["consequents"].apply(lambda x: ", ".join(list(x)))
 
-if __name__ == '__main__':
-    main()
+print("\n--- TOP 5 REGLAS DENTRO DE LA CATEGORIA TECNOLOGIA ---")
+print(reglas_tec[["Antecedente", "Consecuente", "support", "confidence", "lift"]].head(5).round(3).to_string(index=False))
 
+# Exportamos las tablas a un Excel de resultados
+with pd.ExcelWriter("Resultados_Ripley_Apriori_Grupo2.xlsx", engine="openpyxl") as writer:
+    top10_productos.to_excel(writer, sheet_name="Top10_Productos", index=False)
+    tabla_top10.to_excel(writer, sheet_name="Top10_Reglas", index=False)
+    df_5_reglas.to_excel(writer, sheet_name="5_Mejores_Reglas", index=False)
+    resumen_tiendas.to_excel(writer, sheet_name="Resumen_Tiendas", index=False)
+
+print("\nArchivo 'Resultados_Ripley_Apriori_Grupo2.xlsx' guardado correctamente.")

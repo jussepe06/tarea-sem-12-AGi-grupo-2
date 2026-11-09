@@ -1,0 +1,11 @@
+# Entorno virtual y caché de Python
+.venv/
+venv/
+__pycache__/
+.ipynb_checkpoints/
+
+# Archivos privados de estudio y borrador de informe (no subir al repo)
+EXPLICACION_DETALLADA_ESTUDIO.md
+INFORME_PARA_WORD.md
+*.png
+
